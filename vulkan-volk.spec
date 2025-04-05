@@ -7,7 +7,7 @@ Summary:        Meta loader for Vulkan API
 
 License:        MIT
 URL:            https://github.com/zeux/volk
-Source0:        %url/archive/vulkan-sdk-%{version}.tar.gz#/Vulkan-Volk-sdk-%{version}.tar.gz
+Source0:        %url/archive/refs/tags/v%{version}.tar.gz
 
 BuildRequires:  gcc
 BuildRequires:  cmake3
