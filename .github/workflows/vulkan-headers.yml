@@ -31,20 +31,59 @@ jobs:
           import requests
           import os
           
-          # Get latest release version from GitHub API
-          api_url = "https://api.github.com/repos/KhronosGroup/Vulkan-Headers/releases/latest"
-          response = requests.get(api_url)
+          # Fetch all tags from the repo to find the latest version
+          api_url = "https://api.github.com/repos/KhronosGroup/Vulkan-Headers/tags"
+          headers = {}
+          
+          # Use GitHub token if available (for higher rate limits)
+          if 'GITHUB_TOKEN' in os.environ:
+              headers['Authorization'] = f"token {os.environ['GITHUB_TOKEN']}"
+          
+          print(f"Fetching latest Vulkan-Headers version from {api_url}")
+          response = requests.get(api_url, headers=headers)
+          
           if response.status_code == 200:
-              latest_version = response.json()["tag_name"].replace("sdk-", "")
+              tags = response.json()
+              # Find the latest SDK version tag
+              sdk_tags = [tag for tag in tags if tag['name'].startswith('sdk-')]
+              
+              if not sdk_tags:
+                  print("No SDK tags found, checking all tags")
+                  # Try all tags if no sdk- prefix tags found
+                  version_pattern = re.compile(r'v?(\d+\.\d+\.\d+)')
+                  version_tags = []
+                  
+                  for tag in tags:
+                      match = version_pattern.match(tag['name'])
+                      if match:
+                          version = match.group(1)
+                          version_tags.append((version, tag['name']))
+                  
+                  if version_tags:
+                      # Sort by version components to get the latest
+                      latest_version = sorted(version_tags, key=lambda x: [int(n) for n in x[0].split('.')])[-1][0]
+                  else:
+                      print("No version tags found")
+                      exit(1)
+              else:
+                  # Get the latest sdk tag
+                  latest_tag = sdk_tags[0]['name']
+                  latest_version = latest_tag.replace('sdk-', '')
+                  print(f"Latest SDK tag: {latest_tag}")
+              
               print(f"Latest version: {latest_version}")
               
               # Read current version from spec file
-              spec_file = "vulkan-headers.spec"  # Path to your spec file
-              with open(spec_file, 'r') as f:
-                  spec_content = f.read()
+              spec_file = "vulkan-headers.spec"  # Adjust path as needed
+              try:
+                  with open(spec_file, 'r') as f:
+                      spec_content = f.read()
+              except FileNotFoundError:
+                  print(f"Error: Spec file {spec_file} not found")
+                  exit(1)
               
               # Extract current version
-              current_version_match = re.search(r'Version:\s+(\d+\.\d+\.\d+)', spec_content)
+              current_version_match = re.search(r'Version:\s+"?(\d+\.\d+\.\d+)"?', spec_content)
               if current_version_match:
                   current_version = current_version_match.group(1)
                   print(f"Current version: {current_version}")
@@ -54,7 +93,8 @@ jobs:
                       print("Update needed!")
                       
                       # Update version in spec file
-                      new_content = re.sub(r'(Version:\s+)\d+\.\d+\.\d+', r'\g<1>' + latest_version, spec_content)
+                      new_content = re.sub(r'(Version:\s+"?)(\d+\.\d+\.\d+)("?)', r'\g<1>' + latest_version + r'\g<3>', spec_content)
+                      
                       with open(spec_file, 'w') as f:
                           f.write(new_content)
                       
@@ -70,6 +110,7 @@ jobs:
                   print("Failed to extract current version")
           else:
               print(f"Failed to get latest version: {response.status_code}")
+              print(f"Response: {response.text}")
           EOF
       
       - name: Commit changes if updated
