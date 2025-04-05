@@ -7,7 +7,7 @@ Summary:        Vulkan tools
 
 License:        ASL 2.0
 URL:            https://github.com/KhronosGroup/Vulkan-Tools
-Source0:        %url/archive/sdk-%{version}.tar.gz#/Vulkan-Tools-%{version}.tar.gz       
+Source0:        %url/archive/refs/tags/v%{version}.tar.gz      
 Source1:        volk.h
 
 BuildRequires:  gcc
