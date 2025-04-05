@@ -1,0 +1,149 @@
+name: Check Vulkan-Loader Updates
+
+on:
+  schedule:
+    - cron: '0 0 * * *'  # Run daily at midnight
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  check-updates:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0  # Fetch all history for proper git operations
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests
+      
+      - name: Check for Vulkan-Loader updates
+        id: check-update
+        run: |
+          python - <<EOF
+          import re
+          import requests
+          import os
+          import sys
+          
+          # Fetch all tags from the repo
+          api_url = "https://api.github.com/repos/KhronosGroup/Vulkan-Loader/tags"
+          
+          print(f"Fetching Vulkan-Loader tags from {api_url}")
+          response = requests.get(api_url)
+          
+          if response.status_code == 200:
+              tags = response.json()
+              # Find tags with version format v1.x.x
+              version_pattern = re.compile(r'v(\d+\.\d+\.\d+)')
+              version_tags = []
+              
+              for tag in tags:
+                  match = version_pattern.match(tag['name'])
+                  if match:
+                      version = match.group(1)
+                      version_tags.append((version, tag['name']))
+              
+              if version_tags:
+                  # Sort by version components to get the latest
+                  version_tags.sort(key=lambda x: [int(n) for n in x[0].split('.')])
+                  latest_version = version_tags[-1][0]
+                  latest_tag = version_tags[-1][1]
+                  print(f"Latest tag: {latest_tag}")
+                  print(f"Latest version: {latest_version}")
+              else:
+                  print("No version tags found")
+                  sys.exit(0)  # Exit gracefully
+              
+              # Read current version from spec file
+              spec_file = "vulkan-loader.spec"
+              try:
+                  with open(spec_file, 'r') as f:
+                      spec_content = f.read()
+              except FileNotFoundError:
+                  print(f"Error: Spec file {spec_file} not found")
+                  sys.exit(0)  # Exit gracefully
+              
+              # Extract current version
+              current_version_match = re.search(r'Version:\s+"?(\d+\.\d+\.\d+)"?', spec_content)
+              if current_version_match:
+                  current_version = current_version_match.group(1)
+                  print(f"Current version: {current_version}")
+                  
+                  # Check if update is needed
+                  if current_version != latest_version:
+                      print(f"Update needed from {current_version} to {latest_version}!")
+                      
+                      # Update version in spec file
+                      new_content = re.sub(r'(Version:\s+"?)(\d+\.\d+\.\d+)("?)', r'\g<1>' + latest_version + r'\g<3>', spec_content)
+                      
+                      # Update URL format
+                      new_content = re.sub(
+                          r'https://github.com/KhronosGroup/Vulkan-Loader/archive/(?:sdk-|refs/tags/v)?\d+\.\d+\.\d+\.tar\.gz',
+                          f'https://github.com/KhronosGroup/Vulkan-Loader/archive/refs/tags/v{latest_version}.tar.gz',
+                          new_content
+                      )
+                      
+                      with open(spec_file, 'w') as f:
+                          f.write(new_content)
+                      
+                      # Set output for GitHub Actions
+                      print(f"::set-output name=updated::true")
+                      print(f"::set-output name=new_version::{latest_version}")
+                      print(f"::set-output name=url_only_update::false")
+                  else:
+                      # Even if version is the same, check if URL needs to be updated
+                      correct_url = f"https://github.com/KhronosGroup/Vulkan-Loader/archive/refs/tags/v{current_version}.tar.gz"
+                      if correct_url not in spec_content:
+                          print("URL format needs to be updated")
+                          
+                          # Update URLs to use the correct format
+                          new_content = re.sub(
+                              r'https://github.com/KhronosGroup/Vulkan-Loader/archive/(?:sdk-|refs/tags/v)?\d+\.\d+\.\d+\.tar\.gz',
+                              correct_url,
+                              spec_content
+                          )
+                          
+                          with open(spec_file, 'w') as f:
+                              f.write(new_content)
+                          
+                          # Set output for GitHub Actions
+                          print(f"::set-output name=updated::true")
+                          print(f"::set-output name=new_version::{current_version}")
+                          print(f"::set-output name=url_only_update::true")
+                      else:
+                          print("No update needed")
+                          print(f"::set-output name=updated::false")
+              else:
+                  print("Failed to extract current version")
+          else:
+              print(f"Failed to get latest version: {response.status_code}")
+              print(f"Response: {response.text}")
+          EOF
+      
+      - name: Commit and push changes
+        if: steps.check-update.outputs.updated == 'true'
+        run: |
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git config --global user.name "github-actions[bot]"
+          
+          # Check if there are changes to commit
+          git diff --quiet || {
+            git add vulkan-loader.spec
+            if [ "${{ steps.check-update.outputs.url_only_update }}" == "true" ]; then
+              git commit -m "Fix Vulkan Headers download URL format for version ${{ steps.check-update.outputs.new_version }}"
+            else
+              git commit -m "Update Vulkan Headers to version ${{ steps.check-update.outputs.new_version }}"
+            fi
+            git push
+          }
