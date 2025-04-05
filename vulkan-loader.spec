@@ -7,7 +7,7 @@ Summary:        Vulkan ICD desktop loader
 
 License:        ASL 2.0
 URL:            https://github.com/KhronosGroup/Vulkan-Loader
-Source0:        %url/archive/sdk-%{version}.tar.gz#/Vulkan-Loader-%{version}.tar.gz       
+Source0:        %url/archive/refs/tags/v%{version}.tar.gz      
 #Patch0:         vulkan-loader-pc.patch
 
 BuildRequires:  gcc
