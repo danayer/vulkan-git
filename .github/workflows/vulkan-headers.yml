@@ -31,50 +31,42 @@ jobs:
           import requests
           import os
           
-          # Fetch all tags from the repo to find the latest version
+          # Fetch all tags from the repo
           api_url = "https://api.github.com/repos/KhronosGroup/Vulkan-Headers/tags"
           headers = {}
           
-          # Use GitHub token if available (for higher rate limits)
+          # Use GitHub token if available
           if 'GITHUB_TOKEN' in os.environ:
               headers['Authorization'] = f"token {os.environ['GITHUB_TOKEN']}"
           
-          print(f"Fetching latest Vulkan-Headers version from {api_url}")
+          print(f"Fetching Vulkan-Headers tags from {api_url}")
           response = requests.get(api_url, headers=headers)
           
           if response.status_code == 200:
               tags = response.json()
-              # Find the latest SDK version tag
-              sdk_tags = [tag for tag in tags if tag['name'].startswith('sdk-')]
+              # Find tags with version format v1.x.x
+              version_pattern = re.compile(r'v(\d+\.\d+\.\d+)')
+              version_tags = []
               
-              if not sdk_tags:
-                  print("No SDK tags found, checking all tags")
-                  # Try all tags if no sdk- prefix tags found
-                  version_pattern = re.compile(r'v?(\d+\.\d+\.\d+)')
-                  version_tags = []
-                  
-                  for tag in tags:
-                      match = version_pattern.match(tag['name'])
-                      if match:
-                          version = match.group(1)
-                          version_tags.append((version, tag['name']))
-                  
-                  if version_tags:
-                      # Sort by version components to get the latest
-                      latest_version = sorted(version_tags, key=lambda x: [int(n) for n in x[0].split('.')])[-1][0]
-                  else:
-                      print("No version tags found")
-                      exit(1)
+              for tag in tags:
+                  match = version_pattern.match(tag['name'])
+                  if match:
+                      version = match.group(1)
+                      version_tags.append((version, tag['name']))
+              
+              if version_tags:
+                  # Sort by version components to get the latest
+                  version_tags.sort(key=lambda x: [int(n) for n in x[0].split('.')])
+                  latest_version = version_tags[-1][0]
+                  latest_tag = version_tags[-1][1]
+                  print(f"Latest tag: {latest_tag}")
+                  print(f"Latest version: {latest_version}")
               else:
-                  # Get the latest sdk tag
-                  latest_tag = sdk_tags[0]['name']
-                  latest_version = latest_tag.replace('sdk-', '')
-                  print(f"Latest SDK tag: {latest_tag}")
-              
-              print(f"Latest version: {latest_version}")
+                  print("No version tags found")
+                  exit(1)
               
               # Read current version from spec file
-              spec_file = "vulkan-headers.spec"  # Adjust path as needed
+              spec_file = "vulkan-headers.spec"
               try:
                   with open(spec_file, 'r') as f:
                       spec_content = f.read()
@@ -90,10 +82,17 @@ jobs:
                   
                   # Check if update is needed
                   if current_version != latest_version:
-                      print("Update needed!")
+                      print(f"Update needed from {current_version} to {latest_version}!")
                       
                       # Update version in spec file
                       new_content = re.sub(r'(Version:\s+"?)(\d+\.\d+\.\d+)("?)', r'\g<1>' + latest_version + r'\g<3>', spec_content)
+                      
+                      # Update URL format
+                      new_content = re.sub(
+                          r'https://github.com/KhronosGroup/Vulkan-Headers/archive/(?:sdk-|refs/tags/v)?\d+\.\d+\.\d+\.tar\.gz',
+                          f'https://github.com/KhronosGroup/Vulkan-Headers/archive/refs/tags/v{latest_version}.tar.gz',
+                          new_content
+                      )
                       
                       with open(spec_file, 'w') as f:
                           f.write(new_content)
@@ -103,9 +102,30 @@ jobs:
                           env_file.write(f"UPDATED=true\n")
                           env_file.write(f"NEW_VERSION={latest_version}\n")
                   else:
-                      print("No update needed")
-                      with open(os.environ['GITHUB_ENV'], 'a') as env_file:
-                          env_file.write("UPDATED=false\n")
+                      # Even if version is the same, check if URL needs to be updated
+                      correct_url = f"https://github.com/KhronosGroup/Vulkan-Headers/archive/refs/tags/v{current_version}.tar.gz"
+                      if correct_url not in spec_content:
+                          print("URL format needs to be updated")
+                          
+                          # Update URLs to use the correct format
+                          new_content = re.sub(
+                              r'https://github.com/KhronosGroup/Vulkan-Headers/archive/(?:sdk-|refs/tags/v)?\d+\.\d+\.\d+\.tar\.gz',
+                              correct_url,
+                              spec_content
+                          )
+                          
+                          with open(spec_file, 'w') as f:
+                              f.write(new_content)
+                          
+                          # Set output for GitHub Actions
+                          with open(os.environ['GITHUB_ENV'], 'a') as env_file:
+                              env_file.write(f"UPDATED=true\n")
+                              env_file.write(f"NEW_VERSION={current_version}\n")
+                              env_file.write(f"URL_ONLY_UPDATE=true\n")
+                      else:
+                          print("No update needed")
+                          with open(os.environ['GITHUB_ENV'], 'a') as env_file:
+                              env_file.write("UPDATED=false\n")
               else:
                   print("Failed to extract current version")
           else:
@@ -119,5 +139,9 @@ jobs:
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
           git add "vulkan-headers.spec"
-          git commit -m "Update Vulkan Headers to version ${{ env.NEW_VERSION }}"
+          if [ "${{ env.URL_ONLY_UPDATE }}" == "true" ]; then
+            git commit -m "Fix Vulkan Headers download URL format for version ${{ env.NEW_VERSION }}"
+          else
+            git commit -m "Update Vulkan Headers to version ${{ env.NEW_VERSION }}"
+          fi
           git push
