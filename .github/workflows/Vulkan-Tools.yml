@@ -1,4 +1,4 @@
-name: Check Vulkan Headers Updates
+name: Check Vulkan-Tools Updates
 
 on:
   schedule:
