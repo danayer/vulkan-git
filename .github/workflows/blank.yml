@@ -1,0 +1,82 @@
+name: Check Vulkan Headers Updates
+
+on:
+  schedule:
+    - cron: '0 0 * * *'  # Run daily at midnight
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  check-updates:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests
+      
+      - name: Check for Vulkan-Headers updates
+        id: check-update
+        run: |
+          python - <<EOF
+          import re
+          import requests
+          import os
+          
+          # Get latest release version from GitHub API
+          api_url = "https://api.github.com/repos/KhronosGroup/Vulkan-Headers/releases/latest"
+          response = requests.get(api_url)
+          if response.status_code == 200:
+              latest_version = response.json()["tag_name"].replace("sdk-", "")
+              print(f"Latest version: {latest_version}")
+              
+              # Read current version from spec file
+              spec_file = "vulkan-headers.spec"  # Path to your spec file
+              with open(spec_file, 'r') as f:
+                  spec_content = f.read()
+              
+              # Extract current version
+              current_version_match = re.search(r'Version:\s+(\d+\.\d+\.\d+)', spec_content)
+              if current_version_match:
+                  current_version = current_version_match.group(1)
+                  print(f"Current version: {current_version}")
+                  
+                  # Check if update is needed
+                  if current_version != latest_version:
+                      print("Update needed!")
+                      
+                      # Update version in spec file
+                      new_content = re.sub(r'(Version:\s+)\d+\.\d+\.\d+', r'\g<1>' + latest_version, spec_content)
+                      with open(spec_file, 'w') as f:
+                          f.write(new_content)
+                      
+                      # Set output for GitHub Actions
+                      with open(os.environ['GITHUB_ENV'], 'a') as env_file:
+                          env_file.write(f"UPDATED=true\n")
+                          env_file.write(f"NEW_VERSION={latest_version}\n")
+                  else:
+                      print("No update needed")
+                      with open(os.environ['GITHUB_ENV'], 'a') as env_file:
+                          env_file.write("UPDATED=false\n")
+              else:
+                  print("Failed to extract current version")
+          else:
+              print(f"Failed to get latest version: {response.status_code}")
+          EOF
+      
+      - name: Commit changes if updated
+        if: env.UPDATED == 'true'
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add "vulkan-headers.spec"
+          git commit -m "Update Vulkan Headers to version ${{ env.NEW_VERSION }}"
+          git push
