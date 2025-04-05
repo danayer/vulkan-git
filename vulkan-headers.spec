@@ -8,7 +8,7 @@ Summary:        Vulkan Header files and API registry
 
 License:        ASL 2.0
 URL:            https://github.com/KhronosGroup/Vulkan-Headers
-Source0:        %url/refs/tags/v%{version}.tar.gz
+Source0:        %url/archive/refs/tags/v%{version}.tar.gz
 
 BuildRequires:  cmake3 gcc gcc-c++ ninja-build
 BuildArch:      noarch       
