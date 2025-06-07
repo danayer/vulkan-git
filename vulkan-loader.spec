@@ -1,7 +1,7 @@
 %global source_date_epoch_from_changelog 0
 
 Name:           vulkan-loader
-Version:        1.4.316
+Version:        1.4.317
 Release:        0.1%{?dist}
 Summary:        Vulkan ICD desktop loader
 
