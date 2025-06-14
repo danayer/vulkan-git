@@ -1,7 +1,7 @@
 %global source_date_epoch_from_changelog 0
 
 Name:           vulkan-tools
-Version:        1.4.317
+Version:        1.4.318
 Release:        0.1%{?dist}
 Summary:        Vulkan tools
 
